@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import femaleData from './assets/data/female.json'
 import maleData from './assets/data/male.json'
 import type { AnswerValue, Gender, PersistedSurvey } from './types/types'
@@ -23,15 +23,72 @@ let dragStartX = 0
 const currentIndex = computed(() => answers.value.length)
 const total = computed(() => questions.value.length)
 
+/** 第一个未作答题目索引；全部已答时为题目数量（无未作答） */
+const firstUnansweredIndex = computed(() => {
+  const n = questions.value.length
+  const a = answers.value
+  for (let i = 0; i < n; i++) {
+    if (a[i] == null) return i
+  }
+  return n
+})
+
+/** 滚轮应定位到的题目索引（未作答优先；全部已答时停在最后一题） */
+const wheelTargetIndex = computed(() => {
+  const n = questions.value.length
+  if (n <= 0) return 0
+  const u = firstUnansweredIndex.value
+  return Math.min(u, n - 1)
+})
+
 /** 当前滚轮选中的索引 */
 const wheelSelectedIndex = ref(0)
 
-/** 监听 currentIndex 变化，自动将滚轮切到最新题 */
-watch(currentIndex, (newVal) => {
-  if (phase.value === 'quiz') {
-    wheelSelectedIndex.value = newVal
+let wheelScrollTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearWheelScrollTimer() {
+  if (wheelScrollTimer != null) {
+    clearTimeout(wheelScrollTimer)
+    wheelScrollTimer = null
   }
-}, { immediate: true })
+}
+
+/** 将滚轮动画滚动到指定题目（步进以呈现滚轮感） */
+function scrollWheelToIndex(target: number, animate: boolean) {
+  const n = questions.value.length
+  if (n <= 0) return
+  const max = n - 1
+  const clamped = Math.max(0, Math.min(target, max))
+  const from = wheelSelectedIndex.value
+
+  clearWheelScrollTimer()
+
+  if (from === clamped) return
+
+  if (!animate || phase.value !== 'quiz') {
+    wheelSelectedIndex.value = clamped
+    return
+  }
+
+  const diff = clamped - from
+  const stepCount = Math.min(14, Math.max(2, Math.abs(diff)))
+  let step = 0
+
+  const tick = () => {
+    step++
+    const t = step / stepCount
+    const eased = 1 - (1 - t) * (1 - t)
+    wheelSelectedIndex.value = Math.round(from + diff * eased)
+    if (step < stepCount) {
+      wheelScrollTimer = window.setTimeout(tick, 42)
+    } else {
+      wheelSelectedIndex.value = clamped
+      wheelScrollTimer = null
+    }
+  }
+
+  tick()
+}
 
 const currentQuestion = computed(() => {
   const i = wheelSelectedIndex.value
@@ -226,6 +283,7 @@ function chooseGender(g: Gender) {
   questions.value = g === 'male' ? maleData.questions : femaleData.questions
   answers.value = []
   completed.value = false
+  wheelSelectedIndex.value = 0
   phase.value = 'quiz'
   writeStorage()
 }
@@ -241,19 +299,22 @@ function finishIfDone() {
 
 function submitAnswer(value: AnswerValue) {
   if (phase.value !== 'quiz' || !currentQuestion.value) return
-  
+
   if (wheelSelectedIndex.value < currentIndex.value) {
     const next = [...answers.value]
     next[wheelSelectedIndex.value] = value
     answers.value = next
     writeStorage()
-    wheelSelectedIndex.value = currentIndex.value
+    scrollWheelToIndex(wheelTargetIndex.value, true)
     return
   }
 
   answers.value = [...answers.value, value]
   writeStorage()
   finishIfDone()
+  if (phase.value === 'quiz') {
+    scrollWheelToIndex(wheelTargetIndex.value, true)
+  }
 }
 
 function onQuizCardPointerDown(e: PointerEvent) {
@@ -319,7 +380,16 @@ onMounted(() => {
   if (saved.answers.length > 0) {
     applyPersisted(saved)
     phase.value = 'quiz'
+    wheelSelectedIndex.value = wheelTargetIndex.value
   }
+})
+
+onUnmounted(() => {
+  clearWheelScrollTimer()
+})
+
+watch(phase, (p) => {
+  if (p !== 'quiz') clearWheelScrollTimer()
 })
 
 const transitionShell = 'transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]'
