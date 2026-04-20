@@ -98,8 +98,6 @@ const currentQuestion = computed(() => {
 
 const score = computed(() => answers.value.filter((a) => a === 'yes').length)
 
-const lastScore = ref<{ score: number; total: number } | null>(null)
-
 const swipeHint = computed<'yes' | 'no' | null>(() => {
   const x = dragX.value
   if (x < -24) return 'yes'
@@ -263,13 +261,6 @@ function applyPersisted(data: PersistedSurvey) {
 }
 
 function startNewSurvey() {
-  const saved = readStorage()
-  if (saved?.completed) {
-    lastScore.value = {
-      score: saved.answers.filter((a) => a === 'yes').length,
-      total: saved.gender === 'male' ? maleData.questions.length : femaleData.questions.length,
-    }
-  }
   localStorage.removeItem(STORAGE_KEY)
   phase.value = 'gender'
   gender.value = null
@@ -292,8 +283,7 @@ function finishIfDone() {
   if (answers.value.length >= questions.value.length && questions.value.length > 0) {
     completed.value = true
     phase.value = 'result'
-    lastScore.value = { score: score.value, total: total.value }
-    writeStorage()
+    localStorage.removeItem(STORAGE_KEY)
   }
 }
 
@@ -371,10 +361,7 @@ onMounted(() => {
   const saved = readStorage()
   if (!saved) return
   if (saved.completed) {
-    lastScore.value = {
-      score: saved.answers.filter((a) => a === 'yes').length,
-      total: saved.gender === 'male' ? maleData.questions.length : femaleData.questions.length,
-    }
+    localStorage.removeItem(STORAGE_KEY)
     return
   }
   if (saved.answers.length > 0) {
@@ -464,10 +451,6 @@ const currentDeckCardClass = shellCardBase
             <h1 class="font-['ZCOOL_QingKe_HuangYou','Noto_Sans_SC',sans-serif] text-3xl font-normal leading-tight tracking-wide text-amber-950 drop-shadow-[0_1px_0_rgba(255,255,255,0.9)] sm:text-[2.125rem]">感同身受问卷</h1>
             <div class="mx-auto mt-4 h-1 w-16 rounded-full bg-linear-to-r from-amber-200/40 via-amber-400 to-orange-300/50" aria-hidden="true" />
           </header>
-
-          <p v-if="lastScore" class="mt-5 text-center text-sm font-medium tracking-wide text-amber-900/80">
-            上次得分：<span class="tabular-nums text-amber-950">{{ lastScore.score }}</span> / <span class="tabular-nums">{{ lastScore.total }}</span>
-          </p>
 
           <div :class="['mt-7', innerPanelClass]">
             <p class="text-center text-[0.8125rem] font-normal leading-[1.75] text-amber-950/90 sm:text-sm">本问卷可以让您在某种程度上感受孩子在性别相关问题上的感受，祝您家庭和睦</p>
@@ -581,6 +564,19 @@ const currentDeckCardClass = shellCardBase
             <p class="text-center text-sm text-amber-900/78">您的得分（每题选「是」得 1 分）</p>
             <p class="mt-5 text-center text-4xl font-semibold tabular-nums text-amber-950 sm:text-5xl">
               {{ score }} <span class="text-2xl font-medium text-amber-900/45 sm:text-3xl">/ {{ total }}</span>
+            </p>
+          </div>
+          <div :class="['mt-8 overflow-hidden', innerPanelClass]">
+            <p class="text-center text-[0.8125rem] font-normal leading-[1.85] text-amber-950/88 sm:text-sm">
+              这些问题，可能只是你人生中的一部分时刻。
+            </p>
+            <p class="mt-5 text-center text-[0.8125rem] font-normal leading-[1.85] text-amber-950/88 sm:text-sm">
+              但对一些人来说，<br />
+              这种不适、被评价、被误解的感觉，<br />
+              并不是偶尔出现。
+            </p>
+            <p class="mt-5 text-center text-[0.8125rem] font-normal leading-[1.85] text-amber-950/88 sm:text-sm">
+              而是每天都在发生。
             </p>
           </div>
           <div class="mt-10 flex justify-center">
